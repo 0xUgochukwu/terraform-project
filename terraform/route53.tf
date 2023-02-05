@@ -12,10 +12,10 @@ resource "aws_route53_zone" "hosted_zone" {
   }
 }
 
-# set up route53 record
+# Spin up a Route53 Record for the load balancer
 resource "aws_route53_record" "site_domain" {
   zone_id = aws_route53_zone.hosted_zone.zone_id
-  name    = "terraform-project.${var.domain_name}"
+  name    = "terraform-test.${var.domain_name}"
   type    = "A"
   alias {
     name                   = aws_lb.altschool-lb.dns_name

@@ -1,7 +1,9 @@
+# Set Provider
 provider "aws" {
   region = "us-east-1"
 }
 
+# Create VPC
 resource "aws_vpc" "altschool_vpc" {
   cidr_block           = "10.0.0.0/16"
   enable_dns_hostnames = true
@@ -9,7 +11,9 @@ resource "aws_vpc" "altschool_vpc" {
     Name = "altschool_vpc"
   }
 }
-# Internet Gateway
+
+
+# Create Internet Gateway
 resource "aws_internet_gateway" "altschool_IG" {
   vpc_id = aws_vpc.altschool_vpc.id
   tags = {
@@ -18,7 +22,7 @@ resource "aws_internet_gateway" "altschool_IG" {
 }
 
 
-# public route table
+# Create Route Table for VPC
 resource "aws_route_table" "altschool-prt" {
   vpc_id = aws_vpc.altschool_vpc.id
   route {
@@ -30,19 +34,8 @@ resource "aws_route_table" "altschool-prt" {
   }
 }
 
-# Associating public subnet 1 with public route table
-resource "aws_route_table_association" "public_subnet_01-association" {
-  subnet_id      = aws_subnet.public_subnet_01.id
-  route_table_id = aws_route_table.altschool-prt.id
-}
 
-# Associating public subnet 2 with public route table
-resource "aws_route_table_association" "public_subnet_02-association" {
-  subnet_id      = aws_subnet.public_subnet_02.id
-  route_table_id = aws_route_table.altschool-prt.id
-
-}
-
+# Create two public subnets
 resource "aws_subnet" "public_subnet_01" {
   vpc_id                  = aws_vpc.altschool_vpc.id
   cidr_block              = "10.0.1.0/24"
@@ -52,7 +45,7 @@ resource "aws_subnet" "public_subnet_01" {
     Name = "public_subnet_01"
   }
 }
-# Create Public Subnet-2
+
 resource "aws_subnet" "public_subnet_02" {
   vpc_id                  = aws_vpc.altschool_vpc.id
   cidr_block              = "10.0.2.0/24"
@@ -63,6 +56,21 @@ resource "aws_subnet" "public_subnet_02" {
   }
 }
 
+
+# Associate public subnets created with the previously created Route Table
+resource "aws_route_table_association" "public_subnet_01-association" {
+  subnet_id      = aws_subnet.public_subnet_01.id
+  route_table_id = aws_route_table.altschool-prt.id
+}
+
+resource "aws_route_table_association" "public_subnet_02-association" {
+  subnet_id      = aws_subnet.public_subnet_02.id
+  route_table_id = aws_route_table.altschool-prt.id
+
+}
+
+
+# Create network ACL's for the subnets
 resource "aws_network_acl" "altschool_network_acl" {
   vpc_id     = aws_vpc.altschool_vpc.id
   subnet_ids = [aws_subnet.public_subnet_01.id, aws_subnet.public_subnet_02.id]
@@ -85,7 +93,8 @@ resource "aws_network_acl" "altschool_network_acl" {
   }
 }
 
-# Security group for the load balancer
+
+# Create Security Group for load balancer
 resource "aws_security_group" "elb_sg" {
   name        = "elb_sg"
   description = "Security group for the Application load balancer"
@@ -112,7 +121,7 @@ resource "aws_security_group" "elb_sg" {
 }
 
 
-# Creating a security group to allow ssh,http and https
+# Creating security group for the servers
 resource "aws_security_group" "inbound_sg" {
   name        = "inbound_sg"
   description = "Allow SSH, HTTP and HTTPS inbound traffic for private instances"
@@ -154,7 +163,7 @@ resource "aws_security_group" "inbound_sg" {
 }
 
 
-# Creating the instances
+# Spin up the instances
 resource "aws_instance" "terraform_server_01" {
   ami               = "ami-00874d747dde814fa"
   instance_type     = "t2.micro"
@@ -167,7 +176,8 @@ resource "aws_instance" "terraform_server_01" {
     source = "terraform"
   }
 }
-# creating instance 2
+
+
 resource "aws_instance" "terraform_server_02" {
   ami               = "ami-00874d747dde814fa"
   instance_type     = "t2.micro"
@@ -180,7 +190,8 @@ resource "aws_instance" "terraform_server_02" {
     source = "terraform"
   }
 }
-# creating instance 3
+
+
 resource "aws_instance" "terraform_server_03" {
   ami               = "ami-00874d747dde814fa"
   instance_type     = "t2.micro"
@@ -194,9 +205,11 @@ resource "aws_instance" "terraform_server_03" {
   }
 }
 
-# Creating host-inventory file to store ip address of instances 
+# Create host-inventory file to store IP addresses of instances 
+# (used in ansible later to configure the servers)
+
 resource "local_file" "IP_addresses" {
-  filename = "./host-inventory"
+  filename = "./inventory"
   content  = <<EOT
 ${aws_instance.terraform_server_01.public_ip}
 ${aws_instance.terraform_server_02.public_ip}
@@ -205,7 +218,7 @@ ${aws_instance.terraform_server_03.public_ip}
 }
 
 
-# Creating project load balancer
+# Create Load Balancers
 resource "aws_lb" "altschool-lb" {
   name               = "altschool-lb"
   internal           = false
@@ -217,7 +230,7 @@ resource "aws_lb" "altschool-lb" {
   depends_on                 = [aws_instance.terraform_server_01, aws_instance.terraform_server_02, aws_instance.terraform_server_03]
 }
 
-# Creating target group for the lb
+# Create Target group
 resource "aws_lb_target_group" "altschool_TG" {
   name        = "altschool-TG"
   target_type = "instance"
@@ -235,7 +248,7 @@ resource "aws_lb_target_group" "altschool_TG" {
   }
 }
 
-# Creating a listner
+# Create a listener for the LB
 resource "aws_lb_listener" "altschool-listener" {
   load_balancer_arn = aws_lb.altschool-lb.arn
   port              = "80"
@@ -245,7 +258,7 @@ resource "aws_lb_listener" "altschool-listener" {
     target_group_arn = aws_lb_target_group.altschool_TG.arn
   }
 }
-# Create the listener rule
+# Create rules for the listener
 resource "aws_lb_listener_rule" "altschool-listener-rule" {
   listener_arn = aws_lb_listener.altschool-listener.arn
   priority     = 1
@@ -260,7 +273,7 @@ resource "aws_lb_listener_rule" "altschool-listener-rule" {
   }
 }
 
-# Attach target groups to instances
+# Attach the instances to the target group previously created
 resource "aws_lb_target_group_attachment" "altschool_TG-attachment1" {
   target_group_arn = aws_lb_target_group.altschool_TG.arn
   target_id        = aws_instance.terraform_server_01.id
